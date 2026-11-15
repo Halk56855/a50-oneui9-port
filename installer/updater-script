@@ -1,0 +1,104 @@
+#MAGISK
+setdefault   magisk_support       on
+setdefault   ensure_rw            on
+setdefault   import_addons        off
+setdefault   apex_mount           off
+setdefault   overwrite_symlinks   off
+setdefault   devices              off
+setdefault   devices_alert        on
+setdefault   dalvik_memory        800M
+setdefault   extraction_speed     4M
+setdefault   off_readonly         ""
+setdefault   framework_res        "/system/framework/framework-res.apk"
+setdefault   permissions          "0:0:0755:0644"
+#-----------------------------------------------#
+check_part_size() {
+    local name="$1" block="$2" need="$3" have
+    [ -n "$block" ] || abort "Missing $name partition block"
+    have=$(blockdev --getsize64 "$block" 2>/dev/null)
+    [ -n "$have" ] || abort "Cannot read $name partition size"
+    ui_print "   - $name size: $have bytes"
+    if is_less "$have" "$need"; then
+        abort "$name partition too small: need $need bytes, have $have bytes"
+    fi
+}
+flash_part() {
+    local name="$1" image="$2" block="$3"
+    ui_print "   - Flashing $name"
+    update_zip "$image" "$block" 1
+    if [ $? -eq 0 ]; then
+        ui_print "     Success"
+    else
+        abort "Failed to flash $name"
+    fi
+}
+ui_print " "
+ui_print "==============================================="
+ui_print "  Ultimate Rom One UI 9 Port  A50 / SM-A505"
+ui_print "==============================================="
+ui_print "  Base: Galaxy S26 FE - One UI 9 / Android 17"
+ui_print "  Target: Galaxy A50, Exynos 9610 family"
+ui_print "  Kernel: Ultimate Kernel A50"
+ui_print " "
+ui_print "  This installer will flash:"
+ui_print "    * system.img  (EROFS)"
+ui_print "    * vendor.img  (EROFS)"
+ui_print "    * product.img (empty - required)"
+ui_print "    * boot.img, dtb.img, up_param.bin"
+ui_print " "
+ui_print "  Recommended:"
+ui_print "    * Format Data if coming from another ROM"
+ui_print "    * First boot can take 5-10 minutes"
+ui_print "    * Root: patch boot with APatch after boot"
+ui_print "==============================================="
+ui_print " "
+ui_print "[1/5] Preparing partitions"
+ui_print "      Unmounting system/vendor/product if needed"
+if is_mounted /system_root; then unmount /system_root; fi
+if is_mounted /system; then unmount /system; fi
+if is_mounted /vendor; then unmount /vendor; fi
+if is_mounted /product; then unmount /product; fi
+show_progress 0.050000 0
+SYSTEM_BLOCK=$(find_block system)
+VENDOR_BLOCK=$(find_block vendor)
+PRODUCT_BLOCK=$(find_block product)
+BOOT_BLOCK=$(find_block boot)
+DTB_BLOCK=$(find_block dtb)
+UP_PARAM_BLOCK=$(find_block up_param)
+ui_print "[2/5] Checking Galaxy A50 partition sizes"
+check_part_size "system" "$SYSTEM_BLOCK" 2878001152
+check_part_size "vendor" "$VENDOR_BLOCK" 564760576
+check_part_size "boot" "$BOOT_BLOCK" 43907072
+check_part_size "dtb" "$DTB_BLOCK" 134332
+check_part_size "up_param" "$UP_PARAM_BLOCK" 2037760
+show_progress 0.100000 0
+ui_print " "
+ui_print "[3/5] Flashing One UI 9 system images"
+flash_part "system" "system.img" "$SYSTEM_BLOCK"
+show_progress 0.550000 0
+flash_part "vendor" "vendor.img" "$VENDOR_BLOCK"
+show_progress 0.700000 0
+flash_part "product" "product.img" "$PRODUCT_BLOCK"
+show_progress 0.850000 0
+ui_print " "
+ui_print "[4/5] Flashing A50 boot partitions"
+flash_part "boot" "boot.img" "$BOOT_BLOCK"
+show_progress 0.910000 0
+flash_part "dtb" "dtb.img" "$DTB_BLOCK"
+show_progress 0.940000 0
+flash_part "up_param" "up_param.bin" "$UP_PARAM_BLOCK"
+show_progress 0.970000 0
+ui_print " "
+ui_print "[5/5] Cleaning caches and temporary files"
+package_extract_file cleanup.sh /tmp/cleanup.sh
+set_perm 0 0 0755 /tmp/cleanup.sh
+run_program "/tmp/cleanup.sh"
+rm -rf /data/system/package_cache /data/apex/decompressed /cache/bootlog.txt 2>/dev/null
+ui_print " "
+ui_print "==============================================="
+ui_print "  Installation complete"
+ui_print "  First boot can take 5-10 minutes."
+ui_print "  If it loops, go back to recovery and format data."
+ui_print "  Enjoy One UI 9 on your A50"
+ui_print "==============================================="
+show_progress 1.000000 0
