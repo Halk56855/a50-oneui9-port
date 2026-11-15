@@ -84,6 +84,7 @@ and the 4.14 **Ultimate Kernel A50**.
 - Restored (debloat went too far → "Device locked" screen): telephony/Knox apps incl. CIDManager,
   CarrierDefaultApp, SimAppDialog, KnoxCore …
 - Restored `app/AllshareMediaShare` (Nearby Service — needed by Smart View)
+- GmsCore.apk taken from the 8.5 (A16) product - the S26 FE product only ships the AndroidPlatformServices sub-module, so clean installs bootlooped without it (fixed in v1.1)
 - Added from S26 FE product: Chrome64, TrichromeLibrary64, WebViewGoogle64, Phonesky, GmsCore,
   product-* permission/sysconfig xmls (NOT `product-google-staged-installer-whitelist.xml` → "Multiple modules installers")
 
