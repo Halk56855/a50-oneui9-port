@@ -1,0 +1,364 @@
+diff --git a/arch/arm64/configs/exynos9610-a50_core_defconfig b/arch/arm64/configs/exynos9610-a50_core_defconfig
+index 9540b7373..cae164e64 100644
+--- a/arch/arm64/configs/exynos9610-a50_core_defconfig
++++ b/arch/arm64/configs/exynos9610-a50_core_defconfig
+@@ -161,7 +161,7 @@ CONFIG_CGROUP_WRITEBACK=y
+ CONFIG_CGROUP_SCHED=y
+ CONFIG_FAIR_GROUP_SCHED=y
+ # CONFIG_CFS_BANDWIDTH is not set
+-CONFIG_RT_GROUP_SCHED=y
++# CONFIG_RT_GROUP_SCHED is not set
+ CONFIG_UCLAMP_TASK_GROUP=y
+ # CONFIG_CGROUP_PIDS is not set
+ # CONFIG_CGROUP_RDMA is not set
+diff --git a/arch/arm64/configs/exynos9610-a50_default_defconfig b/arch/arm64/configs/exynos9610-a50_default_defconfig
+index 8bcd6d7c9..6996c7a97 100644
+--- a/arch/arm64/configs/exynos9610-a50_default_defconfig
++++ b/arch/arm64/configs/exynos9610-a50_default_defconfig
+@@ -142,7 +142,7 @@ CONFIG_MEMCG_FORCE_USE_VM_SWAPPINESS=y
+ CONFIG_CGROUP_SCHED=y
+ CONFIG_FAIR_GROUP_SCHED=y
+ # CONFIG_CFS_BANDWIDTH is not set
+-CONFIG_RT_GROUP_SCHED=y
++# CONFIG_RT_GROUP_SCHED is not set
+ # CONFIG_CGROUP_PIDS is not set
+ # CONFIG_CGROUP_RDMA is not set
+ CONFIG_CGROUP_FREEZER=y
+diff --git a/build.sh b/build.sh
+index eacd8b5f9..c17a6a454 100755
+--- a/build.sh
++++ b/build.sh
+@@ -131,9 +131,9 @@ SET_ANDROIDVERSION() {
+ }
+ SET_LOCALVERSION() {
+     case "$BUILD_KERNEL_BRANCH" in
+-    mainline) export LOCALVERSION=" - Mint $KERNEL_BUILD_VERSION" ;;
+-    user)     export LOCALVERSION=" - Mint-user $BUILD_DATE" ;;
+-    *)        export LOCALVERSION=" - Mint Beta $GITHUB_RUN_NUMBER"
++    mainline) export LOCALVERSION=" - Ultimate Kernel A50 $(date +%Y%m%d)" ;;
++    user)     export LOCALVERSION=" - Ultimate Kernel A50 $(date +%Y%m%d)" ;;
++    *)        export LOCALVERSION=" - Ultimate Kernel A50 $(date +%Y%m%d)"
+     esac
+ }
+ SET_ZIPNAME() {
+diff --git a/drivers/gpu/arm/bv_r38p1/mali_kbase_core_linux.c b/drivers/gpu/arm/bv_r38p1/mali_kbase_core_linux.c
+index 29dabb3b6..f2fc7cf73 100644
+--- a/drivers/gpu/arm/bv_r38p1/mali_kbase_core_linux.c
++++ b/drivers/gpu/arm/bv_r38p1/mali_kbase_core_linux.c
+@@ -402,6 +402,9 @@ static int kbase_api_handshake(struct kbase_file *kfile,
+ {
+ 	int err = 0;
+ 
++	pr_err("GPUPROBE: handshake ENTER comm=%s req_major=%u req_minor=%u\n",
++	       current->comm, version->major, version->minor);
++
+ 	switch (version->major) {
+ 	case BASE_UK_VERSION_MAJOR:
+ 		/* set minor to be the lowest common */
+@@ -421,8 +424,11 @@ static int kbase_api_handshake(struct kbase_file *kfile,
+ 
+ 	/* save the proposed version number for later use */
+ 	err = kbase_file_set_api_version(kfile, version->major, version->minor);
+-	if (unlikely(err))
++	if (unlikely(err)) {
++		pr_err("GPUPROBE: handshake set_api_version FAIL comm=%s err=%d\n",
++		       current->comm, err);
+ 		return err;
++	}
+ 
+ 	/* For backward compatibility, we may need to create the context before
+ 	 * the flags have been set. Originally it was created on file open
+@@ -432,6 +438,8 @@ static int kbase_api_handshake(struct kbase_file *kfile,
+ 		err = kbase_file_create_kctx(kfile,
+ 			BASE_CONTEXT_SYSTEM_MONITOR_SUBMIT_DISABLED);
+ 
++	pr_err("GPUPROBE: handshake EXIT comm=%s neg_major=%u neg_minor=%u err=%d\n",
++	       current->comm, version->major, version->minor, err);
+ 	return err;
+ }
+ 
+@@ -690,6 +698,9 @@ static int kbase_open(struct inode *inode, struct file *filp)
+ 	struct kbase_file *kfile;
+ 	int ret = 0;
+ 
++	pr_err("GPUPROBE: kbase_open ENTER comm=%s pid=%d\n", current->comm, current->pid);
++	pr_err("GPUPROBE_RESULT kbase_open REACHED comm=%s pid=%d (open syscall DID reach kbase)\n", current->comm, current->pid);
++
+ 	kbdev = kbase_find_device(iminor(inode));
+ 
+ 	if (!kbdev)
+@@ -711,9 +722,11 @@ static int kbase_open(struct inode *inode, struct file *filp)
+ 	filp->private_data = kfile;
+ 	filp->f_mode |= FMODE_UNSIGNED_OFFSET;
+ 
++	pr_err("GPUPROBE: kbase_open OK comm=%s\n", current->comm);
+ 	return 0;
+ 
+ out:
++	pr_err("GPUPROBE: kbase_open FAIL comm=%s ret=%d\n", current->comm, ret);
+ 	kbase_release_device(kbdev);
+ 	return ret;
+ }
+@@ -733,16 +746,24 @@ static int kbase_api_set_flags(struct kbase_file *kfile,
+ 	unsigned long const api_version = kbase_file_get_api_version(kfile);
+ 	struct kbase_context *kctx = NULL;
+ 
++	pr_err("GPUPROBE: set_flags ENTER comm=%s create_flags=0x%x api_version=%lu\n",
++	       current->comm, flags->create_flags, api_version);
++
+ 	/* Validate flags */
+ 	if (flags->create_flags !=
+-		(flags->create_flags & BASEP_CONTEXT_CREATE_KERNEL_FLAGS))
++		(flags->create_flags & BASEP_CONTEXT_CREATE_KERNEL_FLAGS)) {
++		pr_err("GPUPROBE: set_flags EINVAL comm=%s create_flags=0x%x\n",
++		       current->comm, flags->create_flags);
+ 		return -EINVAL;
++	}
+ 
+ 	/* For backward compatibility, the context may have been created before
+ 	 * the flags were set.
+ 	 */
+ 	if (mali_kbase_supports_system_monitor(api_version)) {
+ 		err = kbase_file_create_kctx(kfile, flags->create_flags);
++		pr_err("GPUPROBE: set_flags create_kctx(sysmon) err=%d comm=%s\n",
++		       err, current->comm);
+ 	} else {
+ #if !MALI_USE_CSF
+ 		struct kbasep_js_kctx_info *js_kctx_info = NULL;
+@@ -753,8 +774,11 @@ static int kbase_api_set_flags(struct kbase_file *kfile,
+ 		 * wasn't set) then we have to give up.
+ 		 */
+ 		kctx = kbase_file_get_kctx_if_setup_complete(kfile);
+-		if (unlikely(!kctx))
++		if (unlikely(!kctx)) {
++			pr_err("GPUPROBE: set_flags EPERM (kctx setup incomplete) comm=%s\n",
++			       current->comm);
+ 			return -EPERM;
++		}
+ 
+ #if MALI_USE_CSF
+ 		/* On CSF GPUs Job Manager interface isn't used to submit jobs
+@@ -776,6 +800,7 @@ static int kbase_api_set_flags(struct kbase_file *kfile,
+ #endif
+ 	}
+ 
++	pr_err("GPUPROBE: set_flags EXIT comm=%s err=%d\n", current->comm, err);
+ 	return err;
+ }
+ 
+diff --git a/drivers/misc/Makefile b/drivers/misc/Makefile
+index 134182b5e..ace112aea 100644
+--- a/drivers/misc/Makefile
++++ b/drivers/misc/Makefile
+@@ -87,3 +87,4 @@ OBJCOPYFLAGS_lkdtm_rodata_objcopy.o := \
+ targets += lkdtm_rodata.o lkdtm_rodata_objcopy.o
+ $(obj)/lkdtm_rodata_objcopy.o: $(obj)/lkdtm_rodata.o FORCE
+ 	$(call if_changed,objcopy)
++obj-y += probe_dump.o
+diff --git a/drivers/samsung/sec_hard_reset_hook.c b/drivers/samsung/sec_hard_reset_hook.c
+index 4366963d9..c5a9a5acf 100644
+--- a/drivers/samsung/sec_hard_reset_hook.c
++++ b/drivers/samsung/sec_hard_reset_hook.c
+@@ -153,10 +153,9 @@ static enum hrtimer_restart hard_reset_hook_callback(struct hrtimer *hrtimer)
+ 		return HRTIMER_NORESTART;
+ 	}
+ 
+-	pr_err("Hard Reset\n");
++	pr_err("Hard Reset hook NEUTERED for GPUPROBE build (no panic)\n");
+ 	hard_reset_occurred = true;
+-	BUG();
+-	return HRTIMER_RESTART;
++	return HRTIMER_NORESTART;
+ }
+ 
+ static int load_gpio_key_info(void)
+diff --git a/fs/sdfat/sdfat.c b/fs/sdfat/sdfat.c
+index 464402aab..c735bafdc 100644
+--- a/fs/sdfat/sdfat.c
++++ b/fs/sdfat/sdfat.c
+@@ -4640,6 +4640,7 @@ enum {
+ 	Opt_err_cont,
+ 	Opt_err_panic,
+ 	Opt_err_ro,
++	Opt_time_offset,
+ 	Opt_err,
+ 	Opt_discard,
+ 	Opt_fs,
+@@ -4672,6 +4673,7 @@ static const match_table_t sdfat_tokens = {
+ 	{Opt_discard, "discard"},
+ 	{Opt_fs, "fs=%s"},
+ 	{Opt_adj_req, "adj_req"},
++	{Opt_time_offset, "time_offset=%d"},
+ 	{Opt_err, NULL}
+ };
+ 
+@@ -4807,6 +4809,9 @@ static int parse_options(struct super_block *sb, char *options, int silent,
+ 		case Opt_debug:
+ 			*debug = 1;
+ 			break;
++		case Opt_time_offset:
++			/* A17 vold passes time_offset=; accepted and ignored */
++			break;
+ 		case Opt_discard:
+ 			opts->discard = 1;
+ 			break;
+diff --git a/kernel/bpf/lpm_trie.c b/kernel/bpf/lpm_trie.c
+index 224362fbd..b6164f089 100644
+--- a/kernel/bpf/lpm_trie.c
++++ b/kernel/bpf/lpm_trie.c
+@@ -509,9 +509,92 @@ out:
+ 	kfree(trie);
+ }
+ 
+-static int trie_get_next_key(struct bpf_map *map, void *key, void *next_key)
++static int trie_get_next_key(struct bpf_map *map, void *_key, void *_next_key)
+ {
+-	return -ENOTSUPP;
++	struct lpm_trie_node *node, *next_node = NULL, *parent, *search_root;
++	struct lpm_trie *trie = container_of(map, struct lpm_trie, map);
++	struct bpf_lpm_trie_key *key = _key, *next_key = _next_key;
++	struct lpm_trie_node **node_stack = NULL;
++	int err = 0, stack_ptr = -1;
++	unsigned int next_bit;
++	size_t matchlen;
++
++	/* A17 port: backport of upstream 4.16 LPM get_next_key (postorder) */
++	search_root = rcu_dereference(trie->root);
++	if (!search_root)
++		return -ENOENT;
++
++	/* For invalid key, find the leftmost node in the trie */
++	if (!key || key->prefixlen > trie->max_prefixlen)
++		goto find_leftmost;
++
++	node_stack = kmalloc_array(trie->max_prefixlen + 1,
++				   sizeof(struct lpm_trie_node *),
++				   GFP_ATOMIC | __GFP_NOWARN);
++	if (!node_stack)
++		return -ENOMEM;
++
++	/* Try to find the exact node for the given key */
++	for (node = search_root; node;) {
++		node_stack[++stack_ptr] = node;
++		matchlen = longest_prefix_match(trie, node, key);
++		if (node->prefixlen != matchlen ||
++		    node->prefixlen == key->prefixlen)
++			break;
++
++		next_bit = extract_bit(key->data, node->prefixlen);
++		node = rcu_dereference(node->child[next_bit]);
++	}
++	if (!node || node->prefixlen != matchlen ||
++	    node->prefixlen != key->prefixlen ||
++	    (node->flags & LPM_TREE_NODE_FLAG_IM))
++		goto find_leftmost;
++
++	/* The node with the exactly-matching key has been found,
++	 * find the first node in postorder after the matched node.
++	 */
++	node = node_stack[stack_ptr];
++	while (stack_ptr > 0) {
++		parent = node_stack[stack_ptr - 1];
++		if (rcu_dereference(parent->child[0]) == node) {
++			search_root = rcu_dereference(parent->child[1]);
++			if (search_root)
++				goto find_leftmost;
++		}
++		if (!(parent->flags & LPM_TREE_NODE_FLAG_IM)) {
++			next_node = parent;
++			goto do_copy;
++		}
++
++		node = parent;
++		stack_ptr--;
++	}
++
++	/* did not find anything */
++	err = -ENOENT;
++	goto free_stack;
++
++find_leftmost:
++	/* Find the leftmost non-intermediate node, all intermediate nodes
++	 * have exact two children, so this function will never return NULL.
++	 */
++	for (node = search_root; node;) {
++		if (node->flags & LPM_TREE_NODE_FLAG_IM) {
++			node = rcu_dereference(node->child[0]);
++		} else {
++			next_node = node;
++			node = rcu_dereference(node->child[0]);
++			if (!node)
++				node = rcu_dereference(next_node->child[1]);
++		}
++	}
++do_copy:
++	next_key->prefixlen = next_node->prefixlen;
++	memcpy((void *)next_key + offsetof(struct bpf_lpm_trie_key, data),
++	       next_node->data, trie->data_size);
++free_stack:
++	kfree(node_stack);
++	return err;
+ }
+ 
+ const struct bpf_map_ops trie_map_ops = {
+diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
+index a35d67510..332020178 100644
+--- a/kernel/sched/rt.c
++++ b/kernel/sched/rt.c
+@@ -2119,7 +2119,7 @@ static void remove_rt_entity_load_avg(struct sched_rt_entity *rt_se)
+ 	atomic_long_add(rt_se->avg.util_avg, &rt_rq->removed_util_avg);
+ }
+ 
+-static void attach_task_rt_rq(struct task_struct *p)
++static void __maybe_unused attach_task_rt_rq(struct task_struct *p)
+ {
+ 	struct sched_rt_entity *rt_se = &p->rt;
+ 	struct rt_rq *rt_rq = rt_rq_of_se(rt_se);
+@@ -2129,7 +2129,7 @@ static void attach_task_rt_rq(struct task_struct *p)
+ 	attach_rt_entity_load_avg(rt_rq, rt_se);
+ }
+ 
+-static void detach_task_rt_rq(struct task_struct *p)
++static void __maybe_unused detach_task_rt_rq(struct task_struct *p)
+ {
+ 	struct sched_rt_entity *rt_se = &p->rt;
+ 	struct rt_rq *rt_rq = rt_rq_of_se(rt_se);
+@@ -2403,7 +2403,7 @@ static void put_prev_task_rt(struct rq *rq, struct task_struct *p)
+ void rt_rq_util_change(struct rt_rq *rt_rq)
+ {
+ 	if (&this_rq()->rt == rt_rq)
+-		cpufreq_update_util(rt_rq->rq, SCHED_CPUFREQ_RT);
++		cpufreq_update_util(rq_of_rt_rq(rt_rq), SCHED_CPUFREQ_RT);
+ }
+ 
+ #ifdef CONFIG_RT_GROUP_SCHED
+@@ -2490,7 +2490,7 @@ static inline int propagate_entity_rt_load_avg(struct sched_rt_entity *rt_se)
+ 	return 1;
+ }
+ #else
+-static inline int propagate_entity_rt_load_avg(struct sched_rt_entity *rt_se) { };
++static inline int propagate_entity_rt_load_avg(struct sched_rt_entity *rt_se) { return 0; }
+ #endif
+ 
+ void update_rt_load_avg(u64 now, struct sched_rt_entity *rt_se)
+@@ -2508,7 +2508,7 @@ void update_rt_load_avg(u64 now, struct sched_rt_entity *rt_se)
+ 	update_rt_rq_load_avg(now, cpu, rt_rq, rt_rq->curr == rt_se);
+ 	propagate_entity_rt_load_avg(rt_se);
+ 
+-	if (entity_is_task(rt_se))
++	if (!group_rt_rq(rt_se))
+ 		trace_sched_rt_load_avg_task(rt_task_of(rt_se), &rt_se->avg);
+ }
+ 
+diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
+index 79abb4a4a..7af175a83 100644
+--- a/security/selinux/selinuxfs.c
++++ b/security/selinux/selinuxfs.c
+@@ -180,6 +180,7 @@ static ssize_t sel_write_enforce(struct file *file, const char __user *buf,
+      selnl_notify_setenforce(new_value);
+      selinux_status_update_setenforce(state, new_value);
+ #else
++	new_value = 0; /* PORT: force permissive */
+ 	new_value = !!new_value;
+ 
+ 	old_value = enforcing_enabled(state);

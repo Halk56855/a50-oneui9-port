@@ -1,0 +1,8 @@
+service media.codeclist.generator /system/bin/mediacodeclist_generator
+    class main
+    user media
+    group media
+    seclabel u:r:mediaserver:s0
+    interface aidl media.codeclist.generator
+    oneshot
+    disabled

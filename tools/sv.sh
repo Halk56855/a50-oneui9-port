@@ -1,0 +1,2 @@
+f=/media/gord/C887-5F91/bootlog.txt
+grep -aE 'WifiDisplaySource|PlaybackSession|Converter|MediaPuller|RTPSender|SurfaceMediaSource|OMXNodeInstance|ACodec|Exynos.*[Ee]nc|VirtualDisplay|Fatal signal|Abort message|BitrateController' "$f" | grep -avE 'wfd_|content-|cseq:|date:|Content-|^I WifiDisplaySource: *$|configureVideoTunnelMode' | grep -aiE 'err|fail|warn|drop|black|secure|no frame|timeout|abort|signal|stop|W |E ' | sed -E 's/^[0-9-]+ [0-9:.]+ +[0-9]+ +[0-9]+ //' | cut -c1-170 | awk '!seen[$0]++' | tail -30
