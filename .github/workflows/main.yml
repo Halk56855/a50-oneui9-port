@@ -1,0 +1,125 @@
+name: Build One UI 9 Port for Galaxy A04
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Build target (system | vendor | product | kernel | all)'
+        required: true
+        default: 'all'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main port repo
+        uses: actions/checkout@v4
+        with:
+          path: port_repo
+
+      - name: Install build tools & toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git bc bison flex libssl-dev make libc6-dev libncurses5-dev \
+            lld llvm clang gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            erofs-utils android-sdk-libsparse-utils cpio zip unzip curl
+
+      - name: Checkout Galaxy A04 trees
+        run: |
+          mkdir -p ~/a04_trees
+          git clone --depth=1 https://github.com/A04-Trees-and-ROMs/android_device_samsung_a04.git ~/a04_trees/device
+          git clone --depth=1 https://github.com/A04-Trees-and-ROMs/android_vendor_samsung_a04.git ~/a04_trees/vendor
+          git clone --depth=1 https://github.com/A04-Trees-and-ROMs/android_kernel_samsung_a04.git ~/a04_trees/kernel
+
+      - name: Prepare workspace & vendor files
+        run: |
+          mkdir -p ~/work/out
+          # ملاحظة: ضع ملفات system المستخرجة للنظام المنقول في ~/work/sys17/system
+          # وملفات system_fs_config و system_file_contexts في ~/work/sys17/config
+          mkdir -p ~/work/sys17/system ~/work/sys17/config ~/work/vendor_src
+          if [ -d ~/a04_trees/vendor/proprietary/vendor ]; then
+            cp -r ~/a04_trees/vendor/proprietary/vendor/* ~/work/vendor_src/
+          fi
+
+      - name: Build EROFS images (system, vendor, product)
+        run: |
+          TARGET="${{ inputs.target }}"
+          MKFS=$(command -v mkfs.erofs)
+
+          build_system() {
+            if [ -f ~/work/sys17/config/system_fs_config ] && [ -f ~/work/sys17/config/system_file_contexts ]; then
+              sed -i '/^\s*$/d' ~/work/sys17/config/system_fs_config ~/work/sys17/config/system_file_contexts
+              "$MKFS" -zlz4hc --mount-point=/system \
+                --fs-config-file=~/work/sys17/config/system_fs_config \
+                --file-contexts=~/work/sys17/config/system_file_contexts \
+                ~/work/out/system_new.img ~/work/sys17/system
+            else
+              echo "Skip system_new.img: missing system_fs_config or system_file_contexts"
+            fi
+          }
+
+          build_vendor() {
+            if [ -f ~/work/sys17/config/vendor_fs_config ] && [ -f ~/work/sys17/config/vendor_file_contexts ]; then
+              sed -i '/^\s*$/d' ~/work/sys17/config/vendor_fs_config ~/work/sys17/config/vendor_file_contexts
+              "$MKFS" -zlz4hc --mount-point=/vendor \
+                --fs-config-file=~/work/sys17/config/vendor_fs_config \
+                --file-contexts=~/work/sys17/config/vendor_file_contexts \
+                ~/work/out/vendor_new.img ~/work/vendor_src
+            else
+              echo "Skip vendor_new.img: missing vendor_fs_config or vendor_file_contexts"
+            fi
+          }
+
+          build_product() {
+            mkdir -p ~/work/emptyprod
+            printf '/product 0 0 0755\n/product/.* 0 0 0644\n' > ~/work/emptyprod_fsc
+            echo '/product(/.*)? u:object_r:system_file:s0' > ~/work/emptyprod_fc
+            "$MKFS" -zlz4hc --mount-point=/product \
+              --fs-config-file=~/work/emptyprod_fsc \
+              --file-contexts=~/work/emptyprod_fc \
+              ~/work/out/product_empty.img ~/work/emptyprod
+          }
+
+          case "$TARGET" in
+            system)  build_system ;;
+            vendor)  build_vendor ;;
+            product) build_product ;;
+            all)     build_system; build_vendor; build_product ;;
+          esac
+
+      - name: Build A04 Kernel
+        run: |
+          TARGET="${{ inputs.target }}"
+          if [ "$TARGET" = "kernel" ] || [ "$TARGET" = "all" ]; then
+            cd ~/a04_trees/kernel
+            export ARCH=arm64
+            export SUBARCH=arm64
+            export CROSS_COMPILE=aarch64-linux-gnu-
+
+            # ابحث عن defconfig مناسب للجهاز داخل arch/arm64/configs
+            ls -la arch/arm64/configs/ | grep -iE 'a04|mt6765|k65' || true
+            DEFCONFIG=$(ls arch/arm64/configs/*a04* 2>/dev/null | head -n 1)
+            [ -z "$DEFCONFIG" ] && DEFCONFIG=$(ls arch/arm64/configs/*mt6765* 2>/dev/null | head -n 1)
+
+            if [ -n "$DEFCONFIG" ]; then
+              CFG_NAME=$(basename "$DEFCONFIG")
+              echo "Using defconfig: $CFG_NAME"
+              make O=out "$CFG_NAME"
+              make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 || make -j"$(nproc)" O=out
+              find out/arch/arm64/boot -maxdepth 1 -name "Image*" -exec cp {} ~/work/out/ \;
+            else
+              echo "No A04/MT6765 defconfig found automatically; inspect arch/arm64/configs"
+              exit 1
+            fi
+          fi
+
+      - name: Upload build outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: a04-oneui9-build-${{ inputs.target }}
+          path: ~/work/out/*
+          if-no-files-found: warn
