@@ -20,14 +20,14 @@ jobs:
         with:
           path: port_repo
 
-      - name: Install build tools & toolchain
+      - name: Install build tools
         run: |
           set -e
           sudo apt-get update
           sudo apt-get install -y \
             git bc bison flex libssl-dev make libc6-dev libncurses5-dev \
-            lld llvm clang gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-            erofs-utils android-sdk-libsparse-utils cpio zip unzip curl
+            binutils-aarch64-linux-gnu erofs-utils android-sdk-libsparse-utils \
+            cpio zip unzip curl wget xz-utils
 
       - name: Checkout Galaxy A04 trees
         run: |
@@ -36,6 +36,28 @@ jobs:
           git clone --depth=1 https://github.com/A04-Trees-and-ROMs/android_device_samsung_a04.git ~/a04_trees/device
           git clone --depth=1 https://github.com/A04-Trees-and-ROMs/android_vendor_samsung_a04.git ~/a04_trees/vendor
           git clone --depth=1 https://github.com/A04-Trees-and-ROMs/android_kernel_samsung_a04.git ~/a04_trees/kernel
+
+      - name: Download GCC & Clang Toolchain
+        run: |
+          set -e
+          mkdir -p ~/a04_trees/toolchain/gcc ~/a04_trees/toolchain/clang/host/linux-x86/clang-r383902
+
+          cd ~/a04_trees/toolchain/gcc
+          wget -q --show-progress --retry-connrefused --waitretry=2 --read-timeout=30 -t 5 \
+            https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz -O gcc.tar.xz || \
+            wget -q --show-progress https://github.com/ravindu644/Android-Kernel-Tutorials/releases/download/toolchains/arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz -O gcc.tar.xz
+          tar -xf gcc.tar.xz -C ./
+
+          cd ~/a04_trees/toolchain/clang
+          wget -q --show-progress https://github.com/ravindu644/Android-Kernel-Tutorials/releases/download/toolchains/clang-r383902.tar.gz -O clang.tar.gz
+          tar -xzf clang.tar.gz -C host/linux-x86/clang-r383902
+
+          # إذا فُكّ الأرشيف داخل مجلد فرعي إضافي، ارفع محتوياته مستوى واحداً
+          if [ ! -x "host/linux-x86/clang-r383902/bin/clang" ] && [ -d "host/linux-x86/clang-r383902/clang-r383902/bin" ]; then
+            mv host/linux-x86/clang-r383902/clang-r383902/* host/linux-x86/clang-r383902/
+          fi
+
+          find ~/a04_trees/toolchain/clang -maxdepth 5 -name "clang" -type f
 
       - name: Prepare workspace & configs
         run: |
@@ -96,14 +118,15 @@ jobs:
           TARGET="${{ inputs.target }}"
           if [ "$TARGET" = "kernel" ] || [ "$TARGET" = "all" ]; then
             cd ~/a04_trees/kernel
+            rm -rf out
+
+            CLANG_DIR="$HOME/a04_trees/toolchain/clang/host/linux-x86/clang-r383902/bin"
+            GCC_BIN_DIR=$(find "$HOME/a04_trees/toolchain/gcc" -maxdepth 3 -type d -name "bin" | head -n 1)
+
             export ARCH=arm64
             export SUBARCH=arm64
-            export CROSS_COMPILE=aarch64-linux-gnu-
-
-            REL_CLANG_DIR="$HOME/a04_trees/toolchain/clang/host/linux-x86/clang-r383902/bin"
-            mkdir -p "$REL_CLANG_DIR"
-            ln -sf "$(command -v clang)" "$REL_CLANG_DIR/clang"
-            "$REL_CLANG_DIR/clang" --version
+            export PATH="$CLANG_DIR:${GCC_BIN_DIR}:$PATH"
+            export CROSS_COMPILE=aarch64-none-linux-gnu-
 
             echo "--- Inspecting init/Kconfig around line 16-17 ---"
             nl -ba init/Kconfig | sed -n '12,24p'
@@ -118,8 +141,8 @@ jobs:
               find drivers/ arch/arm64/configs/ -name "Kconfig*" -exec sed -i 's/\r$//' {} + 2>/dev/null || true
               sed -i 's/\r$//' "arch/arm64/configs/$CFG_NAME" 2>/dev/null || true
 
-              make O=out CC=clang HOSTCC=gcc "$CFG_NAME"
-              make -j"$(nproc)" O=out CC=clang HOSTCC=gcc LLVM=1 LLVM_IAS=1 || make -j"$(nproc)" O=out CROSS_COMPILE=aarch64-linux-gnu-
+              make O=out CC="$CLANG_DIR/clang" HOSTCC=gcc "$CFG_NAME"
+              make -j"$(nproc)" O=out CC="$CLANG_DIR/clang" HOSTCC=gcc
               find out/arch/arm64/boot -maxdepth 1 -name "Image*" -exec cp {} ~/work/out/ \;
             else
               echo "No A04/MT6765 defconfig found automatically; inspect arch/arm64/configs"
