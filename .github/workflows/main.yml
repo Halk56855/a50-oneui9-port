@@ -35,15 +35,19 @@ jobs:
           git clone --depth=1 https://github.com/A04-Trees-and-ROMs/android_vendor_samsung_a04.git ~/a04_trees/vendor
           git clone --depth=1 https://github.com/A04-Trees-and-ROMs/android_kernel_samsung_a04.git ~/a04_trees/kernel
 
-      - name: Prepare workspace & vendor files
+      - name: Prepare workspace & configs
         run: |
-          mkdir -p ~/work/out
-          # ملاحظة: ضع ملفات system المستخرجة للنظام المنقول في ~/work/sys17/system
-          # وملفات system_fs_config و system_file_contexts في ~/work/sys17/config
-          mkdir -p ~/work/sys17/system ~/work/sys17/config ~/work/vendor_src
+          mkdir -p ~/work/out ~/work/sys17/system ~/work/sys17/config ~/work/vendor_src
           if [ -d ~/a04_trees/vendor/proprietary/vendor ]; then
             cp -r ~/a04_trees/vendor/proprietary/vendor/* ~/work/vendor_src/
           fi
+
+          # نسخ ملفات file_contexts إذا كانت متوفرة في المستودع أو شجرة الجهاز
+          find "$GITHUB_WORKSPACE/port_repo" -name "*system*file_contexts*" -exec cp {} ~/work/sys17/config/system_file_contexts \; 2>/dev/null || true
+          find "$GITHUB_WORKSPACE/port_repo" -name "*vendor*file_contexts*" -exec cp {} ~/work/sys17/config/vendor_file_contexts \; 2>/dev/null || true
+
+          [ -f ~/work/sys17/config/system_file_contexts ] || echo '/system(/.*)? u:object_r:system_file:s0' > ~/work/sys17/config/system_file_contexts
+          [ -f ~/work/sys17/config/vendor_file_contexts ] || echo '/vendor(/.*)? u:object_r:vendor_file:s0' > ~/work/sys17/config/vendor_file_contexts
 
       - name: Build EROFS images (system, vendor, product)
         run: |
@@ -51,35 +55,34 @@ jobs:
           MKFS=$(command -v mkfs.erofs)
 
           build_system() {
-            if [ -f ~/work/sys17/config/system_fs_config ] && [ -f ~/work/sys17/config/system_file_contexts ]; then
-              sed -i '/^\s*$/d' ~/work/sys17/config/system_fs_config ~/work/sys17/config/system_file_contexts
+            if [ -n "$(ls -A ~/work/sys17/system 2>/dev/null)" ]; then
+              sed -i '/^\s*$/d' ~/work/sys17/config/system_file_contexts
               "$MKFS" -zlz4hc --mount-point=/system \
-                --fs-config-file=~/work/sys17/config/system_fs_config \
+                --force-uid=0 --force-gid=0 \
                 --file-contexts=~/work/sys17/config/system_file_contexts \
                 ~/work/out/system_new.img ~/work/sys17/system
             else
-              echo "Skip system_new.img: missing system_fs_config or system_file_contexts"
+              echo "Skip system_new.img: ~/work/sys17/system is empty"
             fi
           }
 
           build_vendor() {
-            if [ -f ~/work/sys17/config/vendor_fs_config ] && [ -f ~/work/sys17/config/vendor_file_contexts ]; then
-              sed -i '/^\s*$/d' ~/work/sys17/config/vendor_fs_config ~/work/sys17/config/vendor_file_contexts
+            if [ -n "$(ls -A ~/work/vendor_src 2>/dev/null)" ]; then
+              sed -i '/^\s*$/d' ~/work/sys17/config/vendor_file_contexts
               "$MKFS" -zlz4hc --mount-point=/vendor \
-                --fs-config-file=~/work/sys17/config/vendor_fs_config \
+                --force-uid=0 --force-gid=0 \
                 --file-contexts=~/work/sys17/config/vendor_file_contexts \
                 ~/work/out/vendor_new.img ~/work/vendor_src
             else
-              echo "Skip vendor_new.img: missing vendor_fs_config or vendor_file_contexts"
+              echo "Skip vendor_new.img: ~/work/vendor_src is empty"
             fi
           }
 
           build_product() {
             mkdir -p ~/work/emptyprod
-            printf '/product 0 0 0755\n/product/.* 0 0 0644\n' > ~/work/emptyprod_fsc
             echo '/product(/.*)? u:object_r:system_file:s0' > ~/work/emptyprod_fc
             "$MKFS" -zlz4hc --mount-point=/product \
-              --fs-config-file=~/work/emptyprod_fsc \
+              --force-uid=0 --force-gid=0 \
               --file-contexts=~/work/emptyprod_fc \
               ~/work/out/product_empty.img ~/work/emptyprod
           }
@@ -100,8 +103,6 @@ jobs:
             export SUBARCH=arm64
             export CROSS_COMPILE=aarch64-linux-gnu-
 
-            # ابحث عن defconfig مناسب للجهاز داخل arch/arm64/configs
-            ls -la arch/arm64/configs/ | grep -iE 'a04|mt6765|k65' || true
             DEFCONFIG=$(ls arch/arm64/configs/*a04* 2>/dev/null | head -n 1)
             [ -z "$DEFCONFIG" ] && DEFCONFIG=$(ls arch/arm64/configs/*mt6765* 2>/dev/null | head -n 1)
 
