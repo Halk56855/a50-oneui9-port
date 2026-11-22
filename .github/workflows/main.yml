@@ -118,7 +118,7 @@ jobs:
           if [ "$TARGET" = "kernel" ] || [ "$TARGET" = "all" ]; then
             cd ~/a04_trees/kernel
             rm -rf out
-            unset HOSTAS HOSTCFLAGS
+            unset HOSTAS HOSTCFLAGS KBUILD_HOSTCFLAGS
 
             CLANG_DIR="$HOME/a04_trees/toolchain/clang/host/linux-x86/clang-r383902/bin"
             GCC_BIN_DIR=$(find "$HOME/a04_trees/toolchain/gcc" -maxdepth 3 -type d -name "bin" | head -n 1)
@@ -126,7 +126,7 @@ jobs:
             export ARCH=arm64
             export SUBARCH=arm64
             export PATH="$CLANG_DIR:${GCC_BIN_DIR}:$PATH"
-            export CROSS_COMPILE=aarch64-linux-gnu-
+            export CROSS_COMPILE=aarch64-none-linux-gnu-
 
             DEFCONFIG=$(ls arch/arm64/configs/*a04* 2>/dev/null | head -n 1)
             [ -z "$DEFCONFIG" ] && DEFCONFIG=$(ls arch/arm64/configs/*mt6765* 2>/dev/null | head -n 1)
@@ -138,8 +138,8 @@ jobs:
               find drivers/ arch/arm64/configs/ -name "Kconfig*" -exec sed -i 's/\r$//' {} + 2>/dev/null || true
               sed -i 's/\r$//' "arch/arm64/configs/$CFG_NAME" 2>/dev/null || true
 
-              make O=out CC=clang HOSTCC=gcc "$CFG_NAME"
-              make -j"$(nproc)" O=out CC=clang HOSTCC=gcc LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip
+              make O=out CC="$CLANG_DIR/clang" HOSTCC="$CLANG_DIR/clang" "$CFG_NAME"
+              make -j"$(nproc)" O=out CC="$CLANG_DIR/clang" HOSTCC="$CLANG_DIR/clang" LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip
               find out/arch/arm64/boot -maxdepth 1 -name "Image*" -exec cp {} ~/work/out/ \;
             else
               echo "No A04/MT6765 defconfig found automatically; inspect arch/arm64/configs"
