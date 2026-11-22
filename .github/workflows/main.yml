@@ -22,6 +22,7 @@ jobs:
 
       - name: Install build tools & toolchain
         run: |
+          set -e
           sudo apt-get update
           sudo apt-get install -y \
             git bc bison flex libssl-dev make libc6-dev libncurses5-dev \
@@ -30,6 +31,7 @@ jobs:
 
       - name: Checkout Galaxy A04 trees
         run: |
+          set -e
           mkdir -p ~/a04_trees
           git clone --depth=1 https://github.com/A04-Trees-and-ROMs/android_device_samsung_a04.git ~/a04_trees/device
           git clone --depth=1 https://github.com/A04-Trees-and-ROMs/android_vendor_samsung_a04.git ~/a04_trees/vendor
@@ -37,12 +39,12 @@ jobs:
 
       - name: Prepare workspace & configs
         run: |
+          set -e
           mkdir -p ~/work/out ~/work/sys17/system ~/work/sys17/config ~/work/vendor_src
           if [ -d ~/a04_trees/vendor/proprietary/vendor ]; then
             cp -r ~/a04_trees/vendor/proprietary/vendor/* ~/work/vendor_src/
           fi
 
-          # نسخ ملفات file_contexts إذا كانت متوفرة في المستودع أو شجرة الجهاز
           find "$GITHUB_WORKSPACE/port_repo" -name "*system*file_contexts*" -exec cp {} ~/work/sys17/config/system_file_contexts \; 2>/dev/null || true
           find "$GITHUB_WORKSPACE/port_repo" -name "*vendor*file_contexts*" -exec cp {} ~/work/sys17/config/vendor_file_contexts \; 2>/dev/null || true
 
@@ -51,16 +53,14 @@ jobs:
 
       - name: Build EROFS images (system, vendor, product)
         run: |
+          set -e
           TARGET="${{ inputs.target }}"
           MKFS=$(command -v mkfs.erofs)
 
           build_system() {
             if [ -n "$(ls -A ~/work/sys17/system 2>/dev/null)" ]; then
               sed -i '/^\s*$/d' ~/work/sys17/config/system_file_contexts
-              "$MKFS" -zlz4hc --mount-point=/system \
-                --force-uid=0 --force-gid=0 \
-                --file-contexts=~/work/sys17/config/system_file_contexts \
-                ~/work/out/system_new.img ~/work/sys17/system
+              "$MKFS" -zlz4hc --mount-point=/system --force-uid=0 --force-gid=0 --file-contexts="$HOME/work/sys17/config/system_file_contexts" "$HOME/work/out/system_new.img" "$HOME/work/sys17/system"
             else
               echo "Skip system_new.img: ~/work/sys17/system is empty"
             fi
@@ -69,10 +69,7 @@ jobs:
           build_vendor() {
             if [ -n "$(ls -A ~/work/vendor_src 2>/dev/null)" ]; then
               sed -i '/^\s*$/d' ~/work/sys17/config/vendor_file_contexts
-              "$MKFS" -zlz4hc --mount-point=/vendor \
-                --force-uid=0 --force-gid=0 \
-                --file-contexts=~/work/sys17/config/vendor_file_contexts \
-                ~/work/out/vendor_new.img ~/work/vendor_src
+              "$MKFS" -zlz4hc --mount-point=/vendor --force-uid=0 --force-gid=0 --file-contexts="$HOME/work/sys17/config/vendor_file_contexts" "$HOME/work/out/vendor_new.img" "$HOME/work/vendor_src"
             else
               echo "Skip vendor_new.img: ~/work/vendor_src is empty"
             fi
@@ -81,10 +78,7 @@ jobs:
           build_product() {
             mkdir -p ~/work/emptyprod
             echo '/product(/.*)? u:object_r:system_file:s0' > ~/work/emptyprod_fc
-            "$MKFS" -zlz4hc --mount-point=/product \
-              --force-uid=0 --force-gid=0 \
-              --file-contexts=~/work/emptyprod_fc \
-              ~/work/out/product_empty.img ~/work/emptyprod
+            "$MKFS" -zlz4hc --mount-point=/product --force-uid=0 --force-gid=0 --file-contexts="$HOME/work/emptyprod_fc" "$HOME/work/out/product_empty.img" "$HOME/work/emptyprod"
           }
 
           case "$TARGET" in
@@ -96,6 +90,7 @@ jobs:
 
       - name: Build A04 Kernel
         run: |
+          set -e
           TARGET="${{ inputs.target }}"
           if [ "$TARGET" = "kernel" ] || [ "$TARGET" = "all" ]; then
             cd ~/a04_trees/kernel
