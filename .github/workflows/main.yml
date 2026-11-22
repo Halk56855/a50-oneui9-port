@@ -59,6 +59,7 @@ jobs:
 
           build_system() {
             if [ -n "$(ls -A ~/work/sys17/system 2>/dev/null)" ]; then
+              sed -i 's/\r$//' ~/work/sys17/config/system_file_contexts
               sed -i '/^\s*$/d' ~/work/sys17/config/system_file_contexts
               "$MKFS" -zlz4hc --mount-point=/system --force-uid=0 --force-gid=0 --file-contexts="$HOME/work/sys17/config/system_file_contexts" "$HOME/work/out/system_new.img" "$HOME/work/sys17/system"
             else
@@ -68,6 +69,7 @@ jobs:
 
           build_vendor() {
             if [ -n "$(ls -A ~/work/vendor_src 2>/dev/null)" ]; then
+              sed -i 's/\r$//' ~/work/sys17/config/vendor_file_contexts
               sed -i '/^\s*$/d' ~/work/sys17/config/vendor_file_contexts
               "$MKFS" -zlz4hc --mount-point=/vendor --force-uid=0 --force-gid=0 --file-contexts="$HOME/work/sys17/config/vendor_file_contexts" "$HOME/work/out/vendor_new.img" "$HOME/work/vendor_src"
             else
@@ -104,6 +106,10 @@ jobs:
             if [ -n "$DEFCONFIG" ]; then
               CFG_NAME=$(basename "$DEFCONFIG")
               echo "Using defconfig: $CFG_NAME"
+
+              find drivers/ arch/arm64/configs/ -name "Kconfig*" -exec sed -i 's/\r$//' {} + 2>/dev/null || true
+              sed -i 's/\r$//' "arch/arm64/configs/$CFG_NAME" 2>/dev/null || true
+
               make O=out "$CFG_NAME"
               make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 || make -j"$(nproc)" O=out
               find out/arch/arm64/boot -maxdepth 1 -name "Image*" -exec cp {} ~/work/out/ \;
