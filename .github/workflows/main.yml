@@ -100,6 +100,12 @@ jobs:
             export SUBARCH=arm64
             export CROSS_COMPILE=aarch64-linux-gnu-
 
+            # توفير مسار clang النسبي الذي يتوقعه gcc-plugin.sh
+            CLANG_BIN_DIR="$PWD/../toolchain/clang/host/linux-x86/clang-r383902/bin"
+            mkdir -p "$CLANG_BIN_DIR"
+            ln -sf "$(command -v clang)" "$CLANG_BIN_DIR/clang"
+            "$CLANG_BIN_DIR/clang" --version
+
             DEFCONFIG=$(ls arch/arm64/configs/*a04* 2>/dev/null | head -n 1)
             [ -z "$DEFCONFIG" ] && DEFCONFIG=$(ls arch/arm64/configs/*mt6765* 2>/dev/null | head -n 1)
 
