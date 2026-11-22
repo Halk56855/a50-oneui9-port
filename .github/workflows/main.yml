@@ -138,8 +138,8 @@ jobs:
               find drivers/ arch/arm64/configs/ -name "Kconfig*" -exec sed -i 's/\r$//' {} + 2>/dev/null || true
               sed -i 's/\r$//' "arch/arm64/configs/$CFG_NAME" 2>/dev/null || true
 
-              make O=out CC="$CLANG_DIR/clang" HOSTCC="$CLANG_DIR/clang" "$CFG_NAME"
-              make -j"$(nproc)" O=out CC="$CLANG_DIR/clang" HOSTCC="$CLANG_DIR/clang" LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip
+              make O=out CC="$CLANG_DIR/clang" HOSTCC="$CLANG_DIR/clang" HOSTLD=/usr/bin/ld HOSTAR=/usr/bin/ar "$CFG_NAME"
+              make -j"$(nproc)" O=out CC="$CLANG_DIR/clang" HOSTCC="$CLANG_DIR/clang" HOSTLD=/usr/bin/ld HOSTAR=/usr/bin/ar LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip
               find out/arch/arm64/boot -maxdepth 1 -name "Image*" -exec cp {} ~/work/out/ \;
             else
               echo "No A04/MT6765 defconfig found automatically; inspect arch/arm64/configs"
